@@ -1,0 +1,96 @@
+=========================================
+MESSE HOTEL - BACKEND PHP (HOSTINGER)
+=========================================
+
+1. FICHEIRO: config.php
+-----------------------------------------
+<?php
+$db_host = 'localhost';
+$db_name = 'SUBSTITUIR_PELO_NOME_DA_BD';
+$db_user = 'SUBSTITUIR_PELO_UTILIZADOR';
+$db_pass = 'SUBSTITUIR_PELA_SENHA';
+
+try {
+    $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+} catch (PDOException $e) {
+    header('Content-Type: application/json', true, 500);
+    echo json_encode(['error' => 'Erro: ' . $e->getMessage()]);
+    exit;
+}
+?>
+
+2. FICHEIRO: api.php
+-----------------------------------------
+<?php
+require_once 'config.php';
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Content-Type: application/json; charset=UTF-8");
+
+$route = $_GET['route'] ?? '';
+$method = $_SERVER['REQUEST_METHOD'];
+$input = json_decode(file_get_contents('php://input'), true);
+
+try {
+    switch ($route) {
+        case 'login':
+            $stmt = $pdo->prepare("SELECT id, name, email, role, avatar FROM users WHERE email = ? AND password = ?");
+            $stmt->execute([$input['email'], $input['password']]);
+            $user = $stmt->fetch();
+            echo $user ? json_encode($user) : json_encode(null);
+            break;
+            
+        case 'stock':
+            if ($method === 'GET') echo json_encode($pdo->query("SELECT * FROM stock_items ORDER BY name ASC")->fetchAll());
+            elseif ($method === 'POST') {
+                $stmt = $pdo->prepare("INSERT INTO stock_items (name, category, unit, quantity, minLevel) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$input['name'], $input['category'], $input['unit'], $input['quantity'], $input['minLevel']]);
+                echo json_encode(['id' => $pdo->lastInsertId()]);
+            }
+            break;
+
+        case 'requisitions':
+            if ($method === 'POST') {
+                $pdo->beginTransaction();
+                $stmt = $pdo->prepare("INSERT INTO requisitions (sectorId, nomeRequisitante, date, status, createdByUserId) VALUES (?, ?, NOW(), 'CONCLUIDO', ?)");
+                $stmt->execute([$input['sectorId'], $input['nomeRequisitante'], $input['createdByUserId']]);
+                $reqId = $pdo->lastInsertId();
+                foreach ($input['items'] as $item) {
+                    $pdo->prepare("INSERT INTO requisition_items (requisitionId, itemId, quantity) VALUES (?, ?, ?)")->execute([$reqId, $item['itemId'], $item['quantity']]);
+                    $pdo->prepare("UPDATE stock_items SET quantity = quantity - ? WHERE id = ?")->execute([$item['quantity'], $item['itemId']]);
+                    $pdo->prepare("INSERT INTO movements (itemId, type, quantity, date, userId, reason) VALUES (?, 'SAIDA', ?, NOW(), ?, ?)")->execute([$item['itemId'], $item['quantity'], $input['createdByUserId'], "Req #$reqId"]);
+                }
+                $pdo->commit();
+                echo json_encode(['success' => true]);
+            } else {
+                $reqs = $pdo->query("SELECT r.*, s.name as sectorName FROM requisitions r JOIN sectors s ON r.sectorId = s.id ORDER BY r.date DESC")->fetchAll();
+                echo json_encode($reqs);
+            }
+            break;
+            
+        case 'stats':
+            echo json_encode([
+                'totalItems' => (int)$pdo->query("SELECT COUNT(*) FROM stock_items")->fetchColumn(),
+                'lowStockItems' => (int)$pdo->query("SELECT COUNT(*) FROM stock_items WHERE quantity <= minLevel")->fetchColumn(),
+                'pendingRequisitions' => 0,
+                'completedRequisitions' => (int)$pdo->query("SELECT COUNT(*) FROM requisitions")->fetchColumn()
+            ]);
+            break;
+
+        case 'sectors': echo json_encode($pdo->query("SELECT * FROM sectors")->fetchAll()); break;
+        case 'users': echo json_encode($pdo->query("SELECT id, name, email, role FROM users")->fetchAll()); break;
+        case 'movements': echo json_encode($pdo->query("SELECT m.*, i.name as itemName FROM movements m JOIN stock_items i ON m.itemId = i.id ORDER BY m.date DESC")->fetchAll()); break;
+    }
+} catch (Exception $e) { if($pdo->inTransaction()) $pdo->rollBack(); echo json_encode(['error' => $e->getMessage()]); }
+?>
+
+3. FICHEIRO: .htaccess
+-----------------------------------------
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ api.php?route=$1 [QSA,L]

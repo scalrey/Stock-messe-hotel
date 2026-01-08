@@ -1,0 +1,19 @@
+{
+  "name": "messe-hotel-backend",
+  "version": "1.0.0",
+  "description": "Backend Messe Hotel (Legacy Support)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "cors": "^2.8.5",
+    "express": "4.17.1",
+    "mysql2": "2.3.3"
+  },
+  "engines": {
+    "node": ">=12.0.0 <15.0.0"
+  }
+}

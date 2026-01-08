@@ -1,0 +1,103 @@
+<?php
+require_once 'config.php';
+
+// Configurações de CORS para permitir que o React comunique com o PHP
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Content-Type: application/json; charset=UTF-8");
+
+// Trata pedidos OPTIONS (Pre-flight) do navegador
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+$route = $_GET['route'] ?? '';
+$method = $_SERVER['REQUEST_METHOD'];
+$input = json_decode(file_get_contents('php://input'), true);
+
+try {
+    switch ($route) {
+        case 'login':
+            if (!$input) throw new Exception("Dados de login não fornecidos");
+            
+            $stmt = $pdo->prepare("SELECT id, name, email, role, avatar FROM users WHERE email = ? AND password = ?");
+            $stmt->execute([$input['email'], $input['password']]);
+            $user = $stmt->fetch();
+            
+            // Retorna o utilizador ou null se não encontrar
+            echo json_encode($user ?: null);
+            break;
+            
+        case 'stock':
+            if ($method === 'GET') {
+                echo json_encode($pdo->query("SELECT * FROM stock_items ORDER BY name ASC")->fetchAll());
+            } elseif ($method === 'POST') {
+                $stmt = $pdo->prepare("INSERT INTO stock_items (name, category, unit, quantity, minLevel) VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$input['name'], $input['category'], $input['unit'], $input['quantity'], $input['minLevel']]);
+                echo json_encode(['id' => $pdo->lastInsertId()]);
+            }
+            break;
+
+        case 'requisitions':
+            if ($method === 'POST') {
+                $pdo->beginTransaction();
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO requisitions (sectorId, nomeRequisitante, date, status, createdByUserId) VALUES (?, ?, NOW(), 'CONCLUIDO', ?)");
+                    $stmt->execute([$input['sectorId'], $input['nomeRequisitante'], $input['createdByUserId']]);
+                    $reqId = $pdo->lastInsertId();
+                    
+                    foreach ($input['items'] as $item) {
+                        $pdo->prepare("INSERT INTO requisition_items (requisitionId, itemId, quantity) VALUES (?, ?, ?)")
+                            ->execute([$reqId, $item['itemId'], $item['quantity']]);
+                            
+                        $pdo->prepare("UPDATE stock_items SET quantity = quantity - ? WHERE id = ?")
+                            ->execute([$item['quantity'], $item['itemId']]);
+                            
+                        $pdo->prepare("INSERT INTO movements (itemId, type, quantity, date, userId, reason) VALUES (?, 'SAIDA', ?, NOW(), ?, ?)")
+                            ->execute([$item['itemId'], $item['quantity'], $input['createdByUserId'], "Req #$reqId"]);
+                    }
+                    $pdo->commit();
+                    echo json_encode(['success' => true, 'id' => $reqId]);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+            } else {
+                $reqs = $pdo->query("SELECT r.*, s.name as sectorName FROM requisitions r JOIN sectors s ON r.sectorId = s.id ORDER BY r.date DESC")->fetchAll();
+                echo json_encode($reqs);
+            }
+            break;
+            
+        case 'stats':
+            echo json_encode([
+                'totalItems' => (int)$pdo->query("SELECT COUNT(*) FROM stock_items")->fetchColumn(),
+                'lowStockItems' => (int)$pdo->query("SELECT COUNT(*) FROM stock_items WHERE quantity <= minLevel")->fetchColumn(),
+                'pendingRequisitions' => 0,
+                'completedRequisitions' => (int)$pdo->query("SELECT COUNT(*) FROM requisitions")->fetchColumn()
+            ]);
+            break;
+
+        case 'sectors': 
+            echo json_encode($pdo->query("SELECT * FROM sectors ORDER BY name ASC")->fetchAll()); 
+            break;
+            
+        case 'users': 
+            echo json_encode($pdo->query("SELECT id, name, email, role FROM users")->fetchAll()); 
+            break;
+            
+        case 'movements': 
+            echo json_encode($pdo->query("SELECT m.*, i.name as itemName FROM movements m JOIN stock_items i ON m.itemId = i.id ORDER BY m.date DESC LIMIT 50")->fetchAll()); 
+            break;
+            
+        default:
+            http_response_code(404);
+            echo json_encode(['error' => 'Rota não encontrada: ' . $route]);
+            break;
+    }
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['error' => $e->getMessage()]);
+}
+?>

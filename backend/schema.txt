@@ -1,0 +1,96 @@
+-- CRIAÇÃO DA BASE DE DADOS
+CREATE DATABASE IF NOT EXISTS messe_db;
+USE messe_db;
+
+-- TABELA DE UTILIZADORES
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('ADMIN', 'OPERATOR') NOT NULL,
+  avatar VARCHAR(255)
+);
+
+-- TABELA DE SETORES
+CREATE TABLE IF NOT EXISTS sectors (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL
+);
+
+-- TABELA DE ITENS DE STOCK
+CREATE TABLE IF NOT EXISTS stock_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  category VARCHAR(255) NOT NULL,
+  quantity INT NOT NULL DEFAULT 0,
+  unit VARCHAR(50) NOT NULL,
+  minLevel INT NOT NULL DEFAULT 0
+);
+
+-- TABELA DE MOVIMENTOS (ENTRADA/SAIDA)
+CREATE TABLE IF NOT EXISTS movements (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  itemId INT NOT NULL,
+  type ENUM('ENTRADA', 'SAIDA') NOT NULL,
+  quantity INT NOT NULL,
+  date DATETIME NOT NULL,
+  userId INT NOT NULL,
+  reason TEXT,
+  FOREIGN KEY (itemId) REFERENCES stock_items(id),
+  FOREIGN KEY (userId) REFERENCES users(id)
+);
+
+-- TABELA DE REQUISIÇÕES
+CREATE TABLE IF NOT EXISTS requisitions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sectorId INT NOT NULL,
+  nomeRequisitante VARCHAR(255) NOT NULL,
+  date DATETIME NOT NULL,
+  status ENUM('PENDENTE', 'APROVADO', 'REJEITADO', 'CONCLUIDO') NOT NULL,
+  createdByUserId INT NOT NULL,
+  FOREIGN KEY (sectorId) REFERENCES sectors(id),
+  FOREIGN KEY (createdByUserId) REFERENCES users(id)
+);
+
+-- TABELA DE ITENS DA REQUISIÇÃO (N:N)
+CREATE TABLE IF NOT EXISTS requisition_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  requisitionId INT NOT NULL,
+  itemId INT NOT NULL,
+  quantity INT NOT NULL,
+  FOREIGN KEY (requisitionId) REFERENCES requisitions(id),
+  FOREIGN KEY (itemId) REFERENCES stock_items(id)
+);
+
+-- ==========================================
+-- DADOS INICIAIS (SEED)
+-- ==========================================
+
+-- 1. Utilizadores (Senha padrão: 123456)
+INSERT INTO users (name, email, password, role, avatar) VALUES 
+('Administrador Chefe', 'admin@messe.com', '123456', 'ADMIN', 'https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff'),
+('Operador Logística', 'op@messe.com', '123456', 'OPERATOR', 'https://ui-avatars.com/api/?name=Operador&background=random');
+
+-- 2. Setores (Ordem Alfabética)
+INSERT INTO sectors (name) VALUES 
+('Bar'),
+('Camareiras'),
+('Cozinha'),
+('Informática'),
+('Lavandaria'),
+('Limpeza'),
+('Manutenção'),
+('PUB'),
+('Recursos Humanos'),
+('Restaurante'),
+('Salão de Beleza');
+
+-- 3. Alguns Produtos de Exemplo
+INSERT INTO stock_items (name, category, quantity, unit, minLevel) VALUES 
+('Água Mineral 500ml', 'Bebidas', 150, 'un', 50),
+('Cerveja Cuca', 'Bebidas', 40, 'un', 100),
+('Papel Higiénico', 'Limpeza', 300, 'rolos', 50),
+('Detergente Piso', 'Limpeza', 10, 'litros', 20),
+('Arroz 25kg', 'Alimentos', 5, 'sacos', 5),
+('Vinho Tinto', 'Bebidas', 24, 'garrafas', 10);

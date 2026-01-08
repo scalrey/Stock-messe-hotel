@@ -1,0 +1,9 @@
+# Ativa o motor de reescrita de URL
+RewriteEngine On
+
+# Não redireciona se o ficheiro ou pasta existir fisicamente
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Envia todos os outros pedidos para o api.php passando a rota como parâmetro
+RewriteRule ^(.*)$ api.php?route=$1 [QSA,L]

@@ -1,0 +1,5 @@
+{
+  "name": "Messe Hotel Stock Manager",
+  "description": "Sistema de gestão de stock e requisições para o Messe Hotel do Huambo com controlo de acesso (Admin/Operador).",
+  "requestFramePermissions": []
+}
